@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>模型账户余额</title><style>
+body{font:16px/1.6 system-ui,sans-serif;color:#1b3733;background:#f5f8f6;max-width:42rem;margin:10vh auto;padding:1.4rem}a{color:#20554a}h1{font-size:2rem}article{background:white;border:1px solid #dbe4de;border-radius:12px;padding:1rem;margin:1rem 0}button{background:#22554a;color:white;border:0;border-radius:8px;padding:.65rem 1rem;font:inherit}
+</style><a href="/">返回聊天</a><h1>模型账户余额</h1><div id="result" aria-live="polite"></div><button id="reload">刷新余额</button>
+<script>
+const result = document.querySelector('#result'), button = document.querySelector('#reload');
+async function refresh() {
+  button.disabled = true;
+  result.textContent = '正在查询…';
+  try {
+    const response = await fetch('/office-balance/data', {cache:'no-store'});
+    if (!response.ok) throw new Error([401,403].includes(response.status) ? '请先在聊天页登录管理员账号。' : '暂时无法查询，请稍后重试。');
+    const entries = await response.json();
+    result.replaceChildren();
+    if (!entries.length) result.textContent = '请先在管理面板的「连接」中添加模型服务商。';
+    for (const entry of entries) {
+      const card = document.createElement('article');
+      const name = document.createElement('strong');
+      name.textContent = entry.name;
+      const value = document.createElement('div');
+      value.textContent = entry.message || entry.balance.balance_infos.map(item => item.total_balance + ' ' + item.currency).join(' / ');
+      card.append(name, value); result.append(card);
+    }
+  } catch (error) { result.textContent = error.message; }
+  finally { button.disabled = false; }
+}
+button.onclick = refresh; refresh();
+</script></html>

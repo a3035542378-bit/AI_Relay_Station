@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+table=21875
+dev=office-tun
+
+remove_rules() {
+    ip "$1" rule del priority 21874 uidrange "$owner" lookup "$table" 2>/dev/null || :
+    ip "$1" rule del priority 21875 uidrange "$owner" unreachable 2>/dev/null || :
+}
+if [ "$1" = tunnel ]; then
+    for attempt in $(seq 1 40); do
+        if ip link show dev "$dev" >/dev/null 2>&1; then break; fi
+        sleep 0.25
+    done
+    for family in -4 -6; do
+        ip "$family" route replace default dev "$dev" table "$table" metric 10
+    done
+    exit 0
+fi
+uid=$(id -u office-webui)
+test "$uid" -ge 100
+owner="$uid-$uid"
+case "$1" in
+start)
+    for family in -4 -6; do
+        ip "$family" route show table "$table" | grep -q "^default dev $dev "
+        remove_rules "$family"
+        ip "$family" rule add priority 21875 uidrange "$owner" unreachable
+        ip "$family" rule add priority 21874 uidrange "$owner" lookup "$table"
+    done ;;
+stop)
+    for family in -4 -6; do remove_rules "$family"; done ;;
+*) exit 2 ;;
+esac

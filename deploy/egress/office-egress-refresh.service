@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh office egress nodes from the authorized subscription
+After=office-egress.service network-online.target
+[Service]
+Type=oneshot
+ExecStart=/opt/office-webui/venv/bin/python /opt/office-egress/refresh.py
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/office-egress
+PrivateTmp=yes
+ProtectHome=yes
+TimeoutStartSec=150
