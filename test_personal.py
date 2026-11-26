@@ -120,3 +120,63 @@ def test_stream_emits_complete_lines_across_transport_chunks(repository, monkeyp
             b"data: one\n", b"\n", b"data: two\n", b"\n", b"data: [DONE]\n", b"\n",
         ]
     asyncio.run(run())
+
+
+def test_discovery_saved_key_bound_to_owner_and_url(repository, monkeypatch):
+    owner = SimpleNamespace(id="alice")
+    requests = []
+
+    async def listing(self, endpoint, key):
+        requests.append((endpoint, key))
+        return ["one", "two"]
+
+    monkeypatch.setattr(personal.ProviderAdapter, "list_models", listing)
+    app = FastAPI()
+    app.include_router(personal.personal_router(lambda: owner))
+    base = "/api/office/personal-models"
+    url = "https://example.com/v1"
+    with TestClient(app) as client:
+        connection = client.post(base, json=dict(name="one", model="one", endpoint=url, key="saved")).json()["id"]
+        form = {"endpoint": url, "connection_id": connection}
+        assert client.post(base + "/discover", json=form).json() == {"models": ["one", "two"]}
+        assert client.post(base + "/discover", json={**form, "endpoint": "https://other.example/v1"}).status_code == 404
+        owner.id = "bob"
+        assert client.post(base + "/discover", json=form).status_code == 404
+        assert client.post(base + "/discover", json={"endpoint": url}).status_code == 422
+        assert client.post(base + "/discover", json={"endpoint": url, "key": "draft"}).status_code == 200
+        assert client.get(base).json() == []
+        assert requests == [(url, "saved"), (url, "draft")]
+
+
+@pytest.mark.parametrize(("host", "header", "expected"), [
+    ("api.xiaomimimo.com", "api-key", "fixture"),
+    ("api.anthropic.com", "x-api-key", "fixture"),
+    ("models.example", "authorization", "Bearer fixture"),
+])
+def test_discovery_auth_and_normalization(monkeypatch, host, header, expected):
+    client_class = httpx.AsyncClient
+    def upstream(request):
+        if request.url.host == "dns.google":
+            return httpx.Response(200, json={"Answer": [{"type": 1, "data": "1.1.1.1"}]})
+        assert request.url.path == "/v1/models" and request.method == "GET"
+        assert request.url.host == "1.1.1.1" and request.headers["host"] == host
+        assert request.extensions["sni_hostname"] == host
+        assert request.headers[header] == expected
+        return httpx.Response(200, json={"data": [{"id": "b"}, {"id": "a"}, {"id": "a"}, {"id": None}, {}]})
+    monkeypatch.setattr(personal.httpx, "AsyncClient", lambda **kw: client_class(
+        transport=httpx.MockTransport(upstream), **kw))
+    assert asyncio.run(personal.ProviderAdapter().list_models("https://" + host + "/v1", "fixture")) == ["a", "b"]
+
+
+@pytest.mark.parametrize("status,body", [(200, b"not JSON"), (200, b"{}"), (401, b"private upstream message"),
+                                         (302, b"redirect"), (200, b"x" * 4194305)])
+def test_discovery_unavailable(monkeypatch, status, body):
+    client_class = httpx.AsyncClient
+    def upstream(req):
+        assert req.url.host == "1.1.1.1"
+        return httpx.Response(status, content=body, headers={"location": "https://other.example/"})
+    monkeypatch.setattr(personal.httpx, "AsyncClient", lambda **kw: client_class(
+        transport=httpx.MockTransport(upstream), **kw))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(personal.ProviderAdapter().list_models("https://1.1.1.1/v1", "fixture"))
+    assert error.value.status_code == 502 and "private upstream message" not in error.value.detail

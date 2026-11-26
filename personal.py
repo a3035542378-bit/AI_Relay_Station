@@ -3,6 +3,7 @@ import asyncio
 import base64
 import hashlib
 import ipaddress
+import json
 import logging
 import os
 from pathlib import Path
@@ -30,18 +31,9 @@ models = Table(
 )
 
 
-class Settings(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
+class ConnectionInput(BaseModel):
     endpoint: str = Field(max_length=1024)
-    model: str = Field(min_length=1, max_length=200)
     key: SecretStr | None = Field(default=None, max_length=8192)
-
-    @field_validator("name", "model")
-    @classmethod
-    def clean(cls, value):
-        if not value.strip():
-            raise ValueError("不能为空")
-        return value.strip()
 
     @field_validator("endpoint")
     @classmethod
@@ -54,6 +46,22 @@ class Settings(BaseModel):
                 or url.host.endswith(".") or "@" in url.netloc.decode()):
             raise ValueError("请填写公网 HTTPS Base URL，不含账号、查询参数或片段")
         return str(url).rstrip("/")
+
+
+class DiscoveryInput(ConnectionInput):
+    connection_id: str | None = Field(default=None, max_length=100)
+
+
+class Settings(ConnectionInput):
+    name: str = Field(min_length=1, max_length=100)
+    model: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name", "model")
+    @classmethod
+    def clean(cls, value):
+        if not value.strip():
+            raise ValueError("不能为空")
+        return value.strip()
 
 
 class Repository:
@@ -155,7 +163,40 @@ def valid_address(address):
             and not getattr(address, "ipv4_mapped", None))
 
 
+def provider_headers(hostname, key, *, listing=False):
+    if hostname == "api.xiaomimimo.com":
+        return {"api-key": key}
+    if listing and hostname == "api.anthropic.com":
+        return {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    return {"Authorization": "Bearer " + key}
+
+
 class ProviderAdapter:
+    async def list_models(self, endpoint, key):
+        try:
+            async with asyncio.timeout(15), httpx.AsyncClient(timeout=10, trust_env=False) as client:
+                url, authority, hostname = await public_target(client, endpoint + "/models")
+                headers = provider_headers(hostname, key, listing=True)
+                headers.update({"Host": authority, "Accept": "application/json", "Accept-Encoding": "identity"})
+                async with client.stream("GET", url, headers=headers, extensions={"sni_hostname": hostname}) as response:
+                    if not response.is_success:
+                        raise await provider_error(response)
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes(chunk_size=65536):
+                        content.extend(chunk)
+                        if len(content) > 4 * 1024 * 1024:
+                            raise HTTPException(502, "服务商模型列表过大")
+            payload = json.loads(content)
+            rows = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(rows, list):
+                raise ValueError("model list format")
+            ids = {row["id"].strip() for row in rows if isinstance(row, dict)
+                   and isinstance(row.get("id"), str) and 0 < len(row["id"].strip()) <= 200}
+            return sorted(ids)
+        except (httpx.HTTPError, ValueError, TimeoutError, RecursionError) as error:
+            log.warning("Model discovery failed (%s)", type(error).__name__)
+            raise HTTPException(502, "服务商未返回可读取的模型列表") from error
+
     async def complete(self, row, body):
         client = httpx.AsyncClient(timeout=httpx.Timeout(180, connect=15), trust_env=False)
         streaming = False
@@ -164,7 +205,7 @@ class ProviderAdapter:
             url, authority, hostname = await public_target(client, row["endpoint"] + route)
             key = cipher().decrypt(row["credential"].encode()).decode()
             req = client.build_request("POST", url, json=payload, headers={
-                "Host": authority, "Authorization": "Bearer " + key,
+                "Host": authority, **provider_headers(hostname, key),
             }, extensions={"sni_hostname": hostname})
             response = await client.send(req, stream=True)
             if not response.is_success:
@@ -209,6 +250,18 @@ async def complete(user, body):
     return await ProviderAdapter().complete(rows[0], body)
 
 
+async def discover_models(user, form):
+    key = form.key.get_secret_value() if form.key else ""
+    if not key:
+        if not form.connection_id:
+            raise HTTPException(422, "请先输入此服务商的 API Key")
+        rows = await repo.records(user.id, form.connection_id)
+        if not rows or rows[0]["endpoint"] != form.endpoint:
+            raise HTTPException(404, "未找到此账号下地址匹配的连接")
+        key = cipher().decrypt(rows[0]["credential"].encode()).decode()
+    return await ProviderAdapter().list_models(form.endpoint, key)
+
+
 def personal_router(verified_user):
     router = APIRouter()
 
@@ -219,6 +272,10 @@ def personal_router(verified_user):
     @router.get("/api/office/personal-models")
     async def list_models(user=Depends(verified_user)):
         return [public_record(row) for row in await repo.records(user.id)]
+
+    @router.post("/api/office/personal-models/discover")
+    async def discover(form: DiscoveryInput, user=Depends(verified_user)):
+        return {"models": await discover_models(user, form)}
 
     @router.post("/api/office/personal-models")
     async def add(settings: Settings, user=Depends(verified_user)):

@@ -1,15 +1,73 @@
 --- a/src/lib/components/AddConnectionModal.svelte
 +++ b/src/lib/components/AddConnectionModal.svelte
-@@ -27,6 +27,8 @@
+@@ -27,6 +27,66 @@
  	export let edit = false;
  
  	export let ollama = false;
 +	export let personal = false;
 +	let displayName = '';
++	const providers = [
++		['OpenAI（GPT）', 'https://api.openai.com/v1'],
++		['DeepSeek', 'https://api.deepseek.com'],
++		['小米 MiMo', 'https://api.xiaomimimo.com/v1'],
++		['Kimi（月之暗面）', 'https://api.moonshot.cn/v1'],
++		['智谱 GLM', 'https://open.bigmodel.cn/api/paas/v4'],
++		['阿里云百炼（通义千问）', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
++		['硅基流动', 'https://api.siliconflow.cn/v1'],
++		['Google Gemini', 'https://generativelanguage.googleapis.com/v1beta/openai'],
++		['Anthropic Claude', 'https://api.anthropic.com/v1'],
++		['xAI Grok', 'https://api.x.ai/v1'],
++		['OpenRouter', 'https://openrouter.ai/api/v1'],
++		['Groq', 'https://api.groq.com/openai/v1'],
++		['Mistral AI', 'https://api.mistral.ai/v1']
++	];
++	let preset = '';
++	let lookupVersion = 0;
++	let discovering = false;
++	let feedback = '';
++
++	function resetDiscovery() {
++		lookupVersion++;
++		availableModelIds = [];
++		feedback = '';
++		discovering = false;
++	}
++
++	function selectProvider(value: string) {
++		resetDiscovery();
++		preset = value;
++		url = value;
++		key = '';
++		modelId = '';
++		displayName = '';
++	}
++
++	async function discover() {
++		if (!show || !personal || !url || discovering || (!key && (!edit || connection?.url !== url))) return;
++		const version = ++lookupVersion;
++		discovering = true;
++		feedback = '';
++		try {
++			const response = await fetch('/api/office/personal-models/discover', {
++				method: 'POST',
++				headers: { Authorization: 'Bearer ' + localStorage.token, 'Content-Type': 'application/json' },
++				body: JSON.stringify({ endpoint: url, key: key || null, connection_id: connection?.config?.id })
++			});
++			const data = await response.json();
++			if (version !== lookupVersion) return;
++			if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '获取失败');
++			availableModelIds = data.models;
++			feedback = availableModelIds.length ? '' : '服务商没有返回模型，可手动填写模型 ID。';
++		} catch (error) {
++			if (version === lookupVersion) feedback = '无法获取模型，可手动填写模型 ID。' + (error instanceof Error ? error.message : '');
++		} finally {
++			if (version === lookupVersion) discovering = false;
++		}
++	}
  
  	export let connection: any = null;
  
-@@ -178,7 +180,20 @@
+@@ -178,7 +238,20 @@
  	};
  
  	const submitHandler = async () => {
@@ -17,7 +75,7 @@
  		loading = true;
 +		if (personal) {
 +			try {
-+				await onSubmit({ endpoint: url.trim(), key, model: modelId.trim(), name: displayName.trim() });
++				await onSubmit({ endpoint: url.trim(), key, model: modelId.trim(), name: displayName.trim() || modelId.trim().slice(0, 100) });
 +				key = '';
 +				show = false;
 +			} catch (error) {
@@ -30,29 +88,40 @@
  
  		if (!ollama && !url) {
  			loading = false;
-@@ -270,6 +285,13 @@
+@@ -270,6 +343,16 @@
  	};
  
  	const init = () => {
 +		if (personal) {
++			resetDiscovery();
 +			url = connection?.url ?? '';
++			preset = providers.find(([, base]) => base === url)?.[1] ?? '';
 +			key = '';
 +			displayName = connection?.config?.name ?? '';
 +			modelId = connection?.config?.model ?? '';
++			if (edit && preset) void discover();
 +			return;
 +		}
  		availableModelIds = [];
  		forwardCookies = connection?.config?.forward_cookies ?? false;
  		if (connection) {
-@@ -356,6 +378,7 @@
+@@ -356,6 +439,15 @@
  					}}
  				>
  					<div>
-+						{#if !personal}
++						{#if personal}
++							<label class="block text-xs text-base-500">服务商
++								<select id="personal-provider" class="block w-full text-sm" value={preset}
++									on:change={(e) => selectProvider(e.currentTarget.value)}>
++									<option value="">自定义（OpenAI 兼容）</option>
++									{#each providers as [label, base]}<option value={base}>{label}</option>{/each}
++								</select>
++							</label>
++						{:else}
  						<div class="flex gap-2">
  							<div class="flex w-full justify-between items-center">
  								<div class=" text-xs text-base-500">{$i18n.t('Connection Type')}</div>
-@@ -378,6 +401,7 @@
+@@ -378,6 +470,7 @@
  							</div>
  						</div>
  
@@ -60,7 +129,17 @@
  						<div class="flex gap-2 mt-1.5">
  							<div class="flex flex-col w-full">
  								<label
-@@ -413,6 +437,7 @@
+@@ -392,7 +485,8 @@
+ 										class={`w-full text-sm ${inputClass}`}
+ 										type="text"
+ 										bind:value={url}
+-										on:input={handleUrlInput}
++										readonly={personal && !!preset}
++										on:input={() => { if (personal) { resetDiscovery(); key = ''; } else handleUrlInput(); }}
+ 										placeholder={$i18n.t('API Base URL')}
+ 										autocomplete="off"
+ 										list={ollama ? undefined : 'suggestions'}
+@@ -413,6 +507,7 @@
  								</div>
  							</div>
  
@@ -68,7 +147,7 @@
  							<Tooltip content={$i18n.t('Verify Connection')} className="self-end -mb-1">
  								<button
  									class="self-center p-1 bg-transparent hover:bg-base-100 dark:hover:bg-base-850 rounded-lg transition"
-@@ -446,6 +471,7 @@
+@@ -446,12 +541,13 @@
  									<Switch id="toggle-connection" bind:state={enable} />
  								</Tooltip>
  							</div>
@@ -76,15 +155,28 @@
  						</div>
  
  						<div class="flex gap-2 mt-2">
-@@ -460,6 +486,7 @@
+ 							<div class="flex flex-col w-full">
+ 								<label for="select-bearer-or-session" class={`text-xs text-base-500`}
+-									>{$i18n.t('Auth')}</label
++									>{personal ? 'API Key' : $i18n.t('Auth')}</label
+ 								>
+ 
+ 								<div class="flex gap-2">
+@@ -460,6 +556,7 @@
  											id="select-bearer-or-session"
  											class={`w-full text-sm ${selectClass}`}
  											bind:value={auth_type}
-+											disabled={personal}
++											disabled={personal} hidden={personal}
  										>
  											<option value="none">{$i18n.t('None')}</option>
  											<option value="bearer">{$i18n.t('Bearer')}</option>
-@@ -477,8 +504,8 @@
+@@ -473,12 +570,13 @@
+ 										</select>
+ 									</div>
+ 
+-									<div class="flex flex-1 items-center">
++									<div class="flex flex-1 items-center" on:input={() => personal && resetDiscovery()}
++										on:focusout={(e) => { if (personal && preset && key && e.target instanceof HTMLInputElement) void discover(); }}>
  										{#if auth_type === 'bearer'}
  											<SensitiveInput
  												bind:value={key}
@@ -95,24 +187,36 @@
  											/>
  										{:else if auth_type === 'none'}
  											<div class={`text-xs self-center translate-y-[1px] text-base-500`}>
-@@ -506,6 +533,16 @@
+@@ -506,6 +604,28 @@
  							</div>
  						</div>
  
 +						{#if personal}
++							<button type="button" class="mt-2 text-xs underline" on:click={discover}
++								disabled={discovering || !url || (!key && (!edit || url !== connection?.url))}>
++								{discovering ? '正在获取模型…' : '获取模型列表'}
++							</button>
++							{#if feedback}<p role="status" class="text-xs text-base-500">{feedback}</p>{/if}
++							{#if availableModelIds.length}
++								<select aria-label="可选模型" class="mt-2 block w-full text-sm" value={modelId}
++									on:change={(e) => modelId = e.currentTarget.value}>
++									<option value="">从 {availableModelIds.length} 个模型中选择</option>
++									{#each availableModelIds as item}<option value={item}>{item}</option>{/each}
++								</select>
++							{/if}
 +							<label class="mt-3 block text-xs text-base-500">
 +								{$i18n.t('Model ID')}
 +								<input class={`block w-full mt-1 text-sm ${inputClass}`} bind:value={modelId} required maxlength="200" />
 +							</label>
 +							<label class="mt-3 block text-xs text-base-500">
 +								{$i18n.t('Name')}
-+								<input class={`block w-full mt-1 text-sm ${inputClass}`} bind:value={displayName} required maxlength="100" />
++								<input class={`block w-full mt-1 text-sm ${inputClass}`} bind:value={displayName} placeholder="默认使用模型 ID" maxlength="100" />
 +							</label>
 +						{:else}
  						{#if !ollama}
  							<div class="flex flex-row justify-between items-center w-full mt-1">
  								<label
-@@ -826,6 +863,7 @@
+@@ -826,6 +946,7 @@
  								</div>
  							</div>
  						{/if}
@@ -120,7 +224,7 @@
  					</div>
  
  					<div class="flex justify-between items-center pt-3 text-xs">
-@@ -869,8 +907,12 @@
+@@ -869,8 +990,12 @@
  		'Are you sure you want to delete this connection? This action cannot be undone.'
  	)}
  	confirmLabel={$i18n.t('Delete')}

@@ -27,7 +27,7 @@
 
 ## 个人 API 和模型
 
-登录后进入「设置 → 个人 → 管理连接」，点击加号即可在原生连接窗口配置模型。旧书签 `/personal-models` 会打开同一设置。每个账号可分别管理多个 OpenAI Chat Completions 兼容模型。填入显示名称、公网 HTTPS Base URL、服务商的模型 ID 和本人的 API Key，保存后可直接在聊天的模型列表中选择。密钥加密保存在数据目录下的 personal-models.sqlite3，备份时需同时保存 WEBUI_SECRET_KEY。更换地址需重新输入密钥。
+登录后进入「设置 → 个人 → 管理连接」，点击加号即可在原生连接窗口配置模型。旧书签 `/personal-models` 会打开同一设置。每个账号可分别管理多个 OpenAI Chat Completions 兼容模型。可选择 OpenAI、DeepSeek、小米 MiMo、Kimi、智谱 GLM、阿里云百炼、硅基流动、Gemini、Claude、Grok、OpenRouter、Groq、Mistral 或自定义地址。国内服务商预设使用标准 API 地址，专属套餐、工作区和其他区域可填写自定义地址。选择预设并输完密钥后，离开密钥输入框会查询服务商的模型列表。自定义地址可点「获取模型列表」；列表不可用时仍可直接填写模型 ID。展示名称留空时使用模型 ID。服务商返回的模型可能包含嵌入、语音等其他用途，请选择支持聊天的模型。填入显示名称、公网 HTTPS Base URL、服务商的模型 ID 和本人的 API Key，保存后可直接在聊天的模型列表中选择。密钥加密保存在数据目录下的 personal-models.sqlite3，备份时需同时保存 WEBUI_SECRET_KEY。更换地址需重新输入密钥。
 
 使用 OpenAI 官方地址时，GPT-6.2 Sol 和 Astra 的纯文本聊天走 Chat Completions，网页附带工具或对话含工具历史时走 Responses。两种请求均使用当前账号连接的密钥。部署个人模型功能时，把 `personal.py`、`personal_protocol.py` 和 `personal_errors.py` 一起放入应用目录。
 
