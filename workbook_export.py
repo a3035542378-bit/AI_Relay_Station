@@ -57,10 +57,10 @@ async def create_excel_file(filename: str, rows: list[list[str | int | float | b
 
     user = UserModel(**__user__)
     name = filename.strip()
+    if name and not name.lower().endswith(".xlsx"):
+        name += ".xlsx"
     if not name or len(name) > 120 or re.search(r'[\\/:*?"<>|\x00-\x1f]', name):
         return {"error": "请使用不含路径的有效文件名，最多 120 个字符。"}
-    if not name.lower().endswith(".xlsx"):
-        name += ".xlsx"
     try:
         stream = await asyncio.to_thread(build_workbook, rows)
     except (ValueError, OverflowError, UnicodeError) as exc:
@@ -78,5 +78,8 @@ async def create_excel_file(filename: str, rows: list[list[str | int | float | b
     url = f"/api/v1/files/{file.id}/content?attachment=true"
     attachment = {"type": "file", "id": file.id, "name": name, "url": url, "content_type": MIME}
     if __event_emitter__:
-        await __event_emitter__({"type": "files", "data": {"files": [attachment.copy()]}})
+        try:
+            await __event_emitter__({"type": "files", "data": {"files": [attachment.copy()]}})
+        except Exception as exc:
+            log.warning("Workbook attachment notification failed (%s)", type(exc).__name__)
     return {"filename": name, "download_url": url}

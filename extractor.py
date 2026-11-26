@@ -42,15 +42,19 @@ async def process_file(request: Request):
         request.headers.get("authorization", "").encode(), f"Bearer {key}".encode()
     ):
         raise HTTPException(403)
-    data = bytearray()
-    async for chunk in request.stream():
-        if len(chunk) + len(data) > MAX_BYTES:
-            raise HTTPException(413, "单文件上限 8 MiB。")
-        data.extend(chunk)
     suffix = PurePath(unquote(request.headers.get("x-filename", ""))).suffix.lower()
+    if parse_slot.locked():
+        raise HTTPException(503, "解析器繁忙，请稍后重试。", headers={"Retry-After": "2"})
     try:
         async with parse_slot:
+            data = bytearray()
+            async for chunk in request.stream():
+                if len(chunk) + len(data) > MAX_BYTES:
+                    raise HTTPException(413, "单文件上限 8 MiB。")
+                data.extend(chunk)
             text = await run_worker(data, suffix)
+    except HTTPException:
+        raise
     except InvalidDocument as error:
         log.warning("Document rejected by format or size limit")
         raise HTTPException(422, str(error)) from error
