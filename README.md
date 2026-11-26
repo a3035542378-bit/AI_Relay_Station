@@ -7,7 +7,7 @@
 
 ## 第一次使用
 
-1. 打开左下角头像 → 管理员面板 → 设置 → 连接，编辑 OpenAI 兼容连接。国内 Kimi 的 Base URL 为 `https://api.moonshot.cn/v1`。在 HTTPS 管理页面填写本人服务商密钥，保存并刷新模型列表。
+1. 打开左下角头像 → 设置 → 管理员 → 外部连接，编辑 OpenAI 兼容连接。国内 Kimi 的 Base URL 为 `https://api.moonshot.cn/v1`。在 HTTPS 管理页面填写本人服务商密钥，保存并刷新模型列表。
 2. 新建聊天，选择支持图片输入的模型。在工作区的模型设置中开启 Vision 和文件上传。用输入框旁的加号选择图片、Excel 或 Word 后提出问题。
 3. 在实例中打开 `/office-balance`。当前支持 DeepSeek 官方接口和 Kimi 国内官方接口；其他自定义连接会显示支持状态。
 
@@ -27,9 +27,11 @@
 
 ## 个人 API 和模型
 
-登录后进入「设置 → 账号 → 管理我的 API 和模型」，也可访问本站的 `/personal-models`。每个账号可分别管理多个 OpenAI Chat Completions 兼容模型。填入显示名称、公网 HTTPS Base URL、服务商的模型 ID 和本人的 API Key，保存后返回聊天即可选择。密钥加密保存在数据目录下的 personal-models.sqlite3，备份时需同时保存 WEBUI_SECRET_KEY。更换地址需重新输入密钥。
+登录后进入「设置 → 个人 → 管理连接」，点击加号即可在原生连接窗口配置模型。旧书签 `/personal-models` 会打开同一设置。每个账号可分别管理多个 OpenAI Chat Completions 兼容模型。填入显示名称、公网 HTTPS Base URL、服务商的模型 ID 和本人的 API Key，保存后可直接在聊天的模型列表中选择。密钥加密保存在数据目录下的 personal-models.sqlite3，备份时需同时保存 WEBUI_SECRET_KEY。更换地址需重新输入密钥。
 
 个人模型列表、修改、删除及推理按当前登录用户鉴权。管理员明确共享的基础模型沿用站点授权配置。Open WebUI 0.13.5 的聊天模型集成使用 deploy/install_personal.py 安装，升级版本前须核对补丁与账号隔离测试。
+
+个人和管理员共用 Open WebUI 的连接设置组件。服务端补丁装入虚拟环境后，前端需使用同版本的源码构建。在装有 Node.js 22 的构建机上，下载并解压 PyPI 发布的 open-webui 0.13.5 源码包，运行 `sh deploy/build_frontend.sh /path/to/open_webui-0.13.5`。把生成的 `build/_app/immutable/` 合并至 wheel 的 `open_webui/frontend/_app/immutable/`，保留旧的哈希资源供已打开的聊天使用。备份后替换该目录下对应的 `_app/version.json` 和 `index.html`，最后重启服务。
 
 ## 部署与运维
 

@@ -49,8 +49,6 @@ def install():
         from personal import complete
         return await complete(user, form_data)
 """)
-    edit(root / "frontend" / "index.html", "</body>",
-         '<script defer src="/personal-models/account.js"></script>\n</body>')
 
 
 if __name__ == "__main__":

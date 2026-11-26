@@ -88,3 +88,12 @@ def test_adapter(repository, monkeypatch, stream):
         else:
             assert answer == {"choices": []}
     asyncio.run(run())
+
+
+def test_old_bookmark_opens_native_connection_settings():
+    app = FastAPI()
+    app.include_router(personal.personal_router(lambda: None))
+    with TestClient(app, follow_redirects=False) as client:
+        response = client.get("/personal-models")
+        assert response.status_code == 307
+        assert response.headers["location"] == "/?settings=connections"

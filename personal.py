@@ -11,7 +11,7 @@ from uuid import uuid4
 import httpx
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from sqlalchemy import Column, MetaData, String, Table, delete, insert, select, update
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -205,12 +205,8 @@ def personal_router(verified_user):
     router = APIRouter()
 
     @router.get("/personal-models", include_in_schema=False)
-    async def page(user=Depends(verified_user)):
-        return FileResponse(Path(__file__).with_name("personal.html"))
-
-    @router.get("/personal-models/account.js", include_in_schema=False)
-    async def account_link():
-        return FileResponse(Path(__file__).with_name("account-link.js"), media_type="application/javascript")
+    async def page():
+        return RedirectResponse("/?settings=connections", status_code=307)
 
     @router.get("/api/office/personal-models")
     async def list_models(user=Depends(verified_user)):

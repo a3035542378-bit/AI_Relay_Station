@@ -1,0 +1,347 @@
+--- a/src/lib/components/AddConnectionModal.svelte
++++ b/src/lib/components/AddConnectionModal.svelte
+@@ -27,6 +27,8 @@
+ 	export let edit = false;
+ 
+ 	export let ollama = false;
++	export let personal = false;
++	let displayName = '';
+ 
+ 	export let connection: any = null;
+ 
+@@ -178,7 +180,20 @@
+ 	};
+ 
+ 	const submitHandler = async () => {
++		if (loading) return;
+ 		loading = true;
++		if (personal) {
++			try {
++				await onSubmit({ endpoint: url.trim(), key, model: modelId.trim(), name: displayName.trim() });
++				key = '';
++				show = false;
++			} catch (error) {
++				toast.error(String(error));
++			} finally {
++				loading = false;
++			}
++			return;
++		}
+ 
+ 		if (!ollama && !url) {
+ 			loading = false;
+@@ -270,6 +285,13 @@
+ 	};
+ 
+ 	const init = () => {
++		if (personal) {
++			url = connection?.url ?? '';
++			key = '';
++			displayName = connection?.config?.name ?? '';
++			modelId = connection?.config?.model ?? '';
++			return;
++		}
+ 		availableModelIds = [];
+ 		forwardCookies = connection?.config?.forward_cookies ?? false;
+ 		if (connection) {
+@@ -356,6 +378,7 @@
+ 					}}
+ 				>
+ 					<div>
++						{#if !personal}
+ 						<div class="flex gap-2">
+ 							<div class="flex w-full justify-between items-center">
+ 								<div class=" text-xs text-base-500">{$i18n.t('Connection Type')}</div>
+@@ -378,6 +401,7 @@
+ 							</div>
+ 						</div>
+ 
++						{/if}
+ 						<div class="flex gap-2 mt-1.5">
+ 							<div class="flex flex-col w-full">
+ 								<label
+@@ -413,6 +437,7 @@
+ 								</div>
+ 							</div>
+ 
++							{#if !personal}
+ 							<Tooltip content={$i18n.t('Verify Connection')} className="self-end -mb-1">
+ 								<button
+ 									class="self-center p-1 bg-transparent hover:bg-base-100 dark:hover:bg-base-850 rounded-lg transition"
+@@ -446,6 +471,7 @@
+ 									<Switch id="toggle-connection" bind:state={enable} />
+ 								</Tooltip>
+ 							</div>
++							{/if}
+ 						</div>
+ 
+ 						<div class="flex gap-2 mt-2">
+@@ -460,6 +486,7 @@
+ 											id="select-bearer-or-session"
+ 											class={`w-full text-sm ${selectClass}`}
+ 											bind:value={auth_type}
++											disabled={personal}
+ 										>
+ 											<option value="none">{$i18n.t('None')}</option>
+ 											<option value="bearer">{$i18n.t('Bearer')}</option>
+@@ -477,8 +504,8 @@
+ 										{#if auth_type === 'bearer'}
+ 											<SensitiveInput
+ 												bind:value={key}
+-												placeholder={$i18n.t('API Key')}
+-												required={false}
++												placeholder={personal && edit ? '留空保留已有密钥' : $i18n.t('API Key')}
++												required={personal && (!edit || url.trim().replace(/\/+$/, '') !== connection?.url)}
+ 											/>
+ 										{:else if auth_type === 'none'}
+ 											<div class={`text-xs self-center translate-y-[1px] text-base-500`}>
+@@ -506,6 +533,16 @@
+ 							</div>
+ 						</div>
+ 
++						{#if personal}
++							<label class="mt-3 block text-xs text-base-500">
++								{$i18n.t('Model ID')}
++								<input class={`block w-full mt-1 text-sm ${inputClass}`} bind:value={modelId} required maxlength="200" />
++							</label>
++							<label class="mt-3 block text-xs text-base-500">
++								{$i18n.t('Name')}
++								<input class={`block w-full mt-1 text-sm ${inputClass}`} bind:value={displayName} required maxlength="100" />
++							</label>
++						{:else}
+ 						{#if !ollama}
+ 							<div class="flex flex-row justify-between items-center w-full mt-1">
+ 								<label
+@@ -826,6 +863,7 @@
+ 								</div>
+ 							</div>
+ 						{/if}
++						{/if}
+ 					</div>
+ 
+ 					<div class="flex justify-between items-center pt-3 text-xs">
+@@ -869,8 +907,12 @@
+ 		'Are you sure you want to delete this connection? This action cannot be undone.'
+ 	)}
+ 	confirmLabel={$i18n.t('Delete')}
+-	on:confirm={() => {
+-		onDelete();
+-		show = false;
++	on:confirm={async () => {
++		try {
++			await onDelete();
++			show = false;
++		} catch (error) {
++			toast.error(String(error));
++		}
+ 	}}
+ />
+--- a/src/lib/components/admin/Settings/Connections/OpenAIConnection.svelte
++++ b/src/lib/components/admin/Settings/Connections/OpenAIConnection.svelte
+@@ -14,6 +14,7 @@
+ 	export let onSubmit = () => {};
+ 
+ 	export let pipeline = false;
++	export let personal = false;
+ 
+ 	export let url = '';
+ 	export let key = '';
+@@ -23,6 +24,7 @@
+ </script>
+ 
+ <AddConnectionModal
++	{personal}
+ 	edit
+ 	bind:show={showConfigModal}
+ 	connection={{
+@@ -30,11 +32,12 @@
+ 		key,
+ 		config
+ 	}}
+-	onDelete={() => {
+-		onDelete();
++	onDelete={async () => {
++		await onDelete();
+ 		showConfigModal = false;
+ 	}}
+-	onSubmit={(connection) => {
++	onSubmit={async (connection) => {
++		if (personal) return onSubmit(connection);
+ 		url = connection.url;
+ 		key = connection.key;
+ 		config = connection.config;
+@@ -59,7 +62,7 @@
+ 						: ''}"
+ 					on:click={() => (showConfigModal = true)}
+ 				>
+-					{url || $i18n.t('API Base URL')}
++					{personal ? config.name + ' · ' + config.model : url || $i18n.t('API Base URL')}
+ 				</button>
+ 
+ 				{#if pipeline}
+@@ -102,6 +105,7 @@
+ 			</button>
+ 		</Tooltip>
+ 
++		{#if !personal}
+ 		<Tooltip content={(config?.enable ?? true) ? $i18n.t('Enabled') : $i18n.t('Disabled')}>
+ 			<Switch
+ 				bind:state={config.enable}
+@@ -112,5 +116,6 @@
+ 				}}
+ 			/>
+ 		</Tooltip>
++		{/if}
+ 	</div>
+ </div>
+--- a/src/lib/components/admin/Settings/Connections.svelte
++++ b/src/lib/components/admin/Settings/Connections.svelte
+@@ -24,6 +24,42 @@
+ 	import AdminSettingSection from './AdminSettingSection.svelte';
+ 
+ 	const i18n: any = getContext('i18n');
++	export let personal = false;
++	type PersonalModel = { id: string; name: string; endpoint: string; model: string };
++	let personalModels: PersonalModel[] | null = null;
++	let listError = '';
++
++	const personalRequest = async (method = 'GET', id = '', fields?: object) => {
++		const res = await fetch('/api/office/personal-models' + (id ? '/' + encodeURIComponent(id) : ''), {
++			method,
++			headers: { Authorization: 'Bearer ' + localStorage.token, 'Content-Type': 'application/json' },
++			body: fields && JSON.stringify(fields)
++		});
++		if (!res.ok) {
++			const { detail } = await res.json().catch(() => ({}));
++			throw new Error(typeof detail === 'string' ? detail : '个人模型配置请求失败（HTTP ' + res.status + '）');
++		}
++		return res.json();
++	};
++
++	const loadPersonal = async () => {
++		try {
++			personalModels = await personalRequest();
++			listError = '';
++		} catch (error) {
++			listError = String(error);
++		}
++	};
++
++	const changePersonal = async (method: string, id: string, fields?: object) => {
++		await personalRequest(method, id, fields);
++		await loadPersonal();
++		try {
++			models.set(await getModels());
++		} catch (error) {
++			toast.error(String(error));
++		}
++	};
+ 
+ 	const getModels = async () => {
+ 		const models = await _getModels(localStorage.token, false, true);
+@@ -149,6 +185,10 @@
+ 	};
+ 
+ 	onMount(async () => {
++		if (personal) {
++			await loadPersonal();
++			return;
++		}
+ 		if ($user?.role === 'admin') {
+ 			let ollamaConfig: any = {};
+ 			let openaiConfig: any = {};
+@@ -216,6 +256,33 @@
+ 	};
+ </script>
+ 
++{#if personal}
++	<AddConnectionModal personal bind:show={showAddOpenAIConnectionModal}
++		onSubmit={(fields) => changePersonal('POST', '', fields)} />
++	<section id="tab-connections" class="h-full overflow-y-auto text-sm">
++		<h2 class="mb-4 text-sm font-medium">{$i18n.t('Manage Connections')}</h2>
++		<AdminSettingRow label="我的 OpenAI 兼容模型" let:labelId>
++			<button id={`${labelId}-control`} type="button" aria-label={$i18n.t('Add Connection')}
++				class="rounded-lg p-1 hover:bg-base-100 dark:hover:bg-base-800"
++				on:click={() => (showAddOpenAIConnectionModal = true)}><Plus className="size-4" /></button>
++		</AdminSettingRow>
++		{#if listError}
++			<p role="alert">{listError} <button class="underline" on:click={loadPersonal}>{$i18n.t('Retry')}</button></p>
++		{:else if personalModels === null}
++			<Spinner className="size-4" />
++		{:else if personalModels.length === 0}
++			<p class="text-xs text-base-500">添加连接后，即可在聊天中选择自己的模型。</p>
++		{:else}
++			{#each personalModels as record (record.id)}
++				<div class="py-1">
++					<OpenAIConnection personal url={record.endpoint} config={record}
++						onSubmit={(fields) => changePersonal('PUT', record.id, fields)}
++						onDelete={() => changePersonal('DELETE', record.id)} />
++				</div>
++			{/each}
++		{/if}
++	</section>
++{:else}
+ <AddConnectionModal
+ 	bind:show={showAddOpenAIConnectionModal}
+ 	onSubmit={addOpenAIConnectionHandler}
+@@ -418,3 +485,4 @@
+ 		</button>
+ 	</div>
+ </form>
++{/if}
+--- a/src/lib/components/chat/SettingsModal.svelte
++++ b/src/lib/components/chat/SettingsModal.svelte
+@@ -197,6 +197,12 @@
+ 			searchPrefixes: ['settings.personal.general.']
+ 		},
+ 		{
++			id: 'connections',
++			titleKey: 'Manage Connections',
++			title: $i18n.t('Manage Connections'),
++			searchPrefixes: []
++		},
++		{
+ 			id: 'interface',
+ 			titleKey: 'settings.personal.interface.title',
+ 			title: $i18n.t('settings.personal.interface.title'),
+@@ -699,6 +705,11 @@
+ 								<ArchiveBox className="size-3.5" strokeWidth="2" />
+ 								<span>{$i18n.t('settings.personal.archivedChats.title')}</span>
+ 							</button>
++						{:else if tabId === 'connections'}
++							<button role="tab" aria-controls="tab-connections" aria-selected={selectedTab === 'connections'}
++								class={tabButtonClass(selectedTab === 'connections')} on:click={() => selectTab('connections')}>
++								<SettingsAlt className="size-3.5" /><span>{$i18n.t('Manage Connections')}</span>
++							</button>
+ 						{:else if tabId === 'account'}
+ 							<button
+ 								role="tab"
+@@ -840,6 +851,8 @@
+ 				<Usage />
+ 			{:else if selectedTab === 'archived_chats'}
+ 				<ArchivedChats />
++			{:else if selectedTab === 'connections'}
++				<AdminConnections personal />
+ 			{:else if selectedTab === 'account'}
+ 				<Account
+ 					saveHandler={() => {
+--- a/src/lib/components/chat/ModelSelector/Selector.svelte
++++ b/src/lib/components/chat/ModelSelector/Selector.svelte
+@@ -1057,7 +1057,7 @@
+ 
+ 					<div class="group relative flex min-h-0 flex-1 flex-col">
+ 						{#if filteredItems.length === 0}
+-							{#if items.length === 0 && $user?.role === 'admin'}
++							{#if items.length === 0}
+ 								<div
+ 									class="my-2 flex w-full flex-col items-start justify-center px-4 py-3 text-start"
+ 								>
+@@ -1074,7 +1074,7 @@
+ 										class="focus-ring mt-3 rounded-lg px-0 py-1 text-[0.6875rem] font-normal leading-none text-base-600 underline-offset-2 transition-colors duration-100 hover:text-base-800 hover:underline focus:outline-hidden focus:underline dark:text-base-300 dark:hover:text-base-100"
+ 										on:click={() => {
+ 											show = false;
+-											showSettings.set('admin:connections');
++											showSettings.set($user?.role === 'admin' ? 'admin:connections' : 'connections');
+ 										}}
+ 									>
+ 										{$i18n.t('Manage Connections')}
