@@ -25,6 +25,8 @@
 
 支持带 BOM 的 UTF-16、UTF-8 及常见 GBK/GB18030 中文文本。旧版 Office 建议使用未加密的文件。聊天消息和附件可保留在实例中，提问会把相关内容发往选定的服务商。
 
+开启原生工具调用、具有文件权限的聊天可以直接要求“生成并附上 测试.xlsx”。工作簿支持一个工作表、文本和数值等单元格，会作为当前账号的可下载附件保存。部署时将 `workbook_export.py` 放到应用目录，并运行 `deploy/install_personal.py` 注册工具。
+
 ## 个人 API 和模型
 
 登录后进入「设置 → 个人 → 管理连接」，点击加号即可在原生连接窗口配置模型。旧书签 `/personal-models` 会打开同一设置。每个账号可分别管理多个 OpenAI Chat Completions 兼容模型。可选择 OpenAI、DeepSeek、小米 MiMo、Kimi、智谱 GLM、阿里云百炼、硅基流动、Gemini、Claude、Grok、OpenRouter、Groq、Mistral 或自定义地址。国内服务商预设使用标准 API 地址，专属套餐、工作区和其他区域可填写自定义地址。选择预设并输完密钥后，离开密钥输入框会查询服务商的模型列表。自定义地址可点「获取模型列表」；列表不可用时仍可直接填写模型 ID。展示名称留空时使用模型 ID。服务商返回的模型可能包含嵌入、语音等其他用途，请选择支持聊天的模型。填入显示名称、公网 HTTPS Base URL、服务商的模型 ID 和本人的 API Key，保存后可直接在聊天的模型列表中选择。密钥加密保存在数据目录下的 personal-models.sqlite3，备份时需同时保存 WEBUI_SECRET_KEY。更换地址需重新输入密钥。

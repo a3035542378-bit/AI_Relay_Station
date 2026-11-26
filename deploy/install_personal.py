@@ -30,6 +30,14 @@ def install():
     if importlib.metadata.version("open-webui") != "0.13.5":
         raise RuntimeError("Verify personal-model integration before upgrading Open WebUI")
     root = Path(importlib.util.find_spec("open_webui").origin).parent
+    tools = root / "utils" / "tools.py"
+    line = "    # Time utilities - available for date calculations"
+    edit(tools, line, """    if (is_builtin_tool_enabled('files') and get_model_capability('file_upload')
+            and await has_user_chat_permission('file_upload')):
+        from workbook_export import create_excel_file
+        builtin_functions.append(create_excel_file)
+
+""" + line)
     base = root / "main.py"
     api = root / "routers" / "openai.py"
     line = "    models.extend(model for model in (await get_tether_models(user)).values() if model['id'] not in known)"
