@@ -29,6 +29,8 @@
 
 登录后进入「设置 → 个人 → 管理连接」，点击加号即可在原生连接窗口配置模型。旧书签 `/personal-models` 会打开同一设置。每个账号可分别管理多个 OpenAI Chat Completions 兼容模型。填入显示名称、公网 HTTPS Base URL、服务商的模型 ID 和本人的 API Key，保存后可直接在聊天的模型列表中选择。密钥加密保存在数据目录下的 personal-models.sqlite3，备份时需同时保存 WEBUI_SECRET_KEY。更换地址需重新输入密钥。
 
+使用 OpenAI 官方地址时，GPT-6.2 Sol 和 Astra 的纯文本聊天走 Chat Completions，网页附带工具或对话含工具历史时走 Responses。两种请求均使用当前账号连接的密钥。部署个人模型功能时，把 `personal.py`、`personal_protocol.py` 和 `personal_errors.py` 一起放入应用目录。
+
 个人模型列表、修改、删除及推理按当前登录用户鉴权。管理员明确共享的基础模型沿用站点授权配置。Open WebUI 0.13.5 的聊天模型集成使用 deploy/install_personal.py 安装，升级版本前须核对补丁与账号隔离测试。
 
 个人和管理员共用 Open WebUI 的连接设置组件。服务端补丁装入虚拟环境后，前端需使用同版本的源码构建。在装有 Node.js 22 的构建机上，下载并解压 PyPI 发布的 open-webui 0.13.5 源码包，运行 `sh deploy/build_frontend.sh /path/to/open_webui-0.13.5`。把生成的 `build/_app/immutable/` 合并至 wheel 的 `open_webui/frontend/_app/immutable/`，保留旧的哈希资源供已打开的聊天使用。备份后替换该目录下对应的 `_app/version.json` 和 `index.html`，最后重启服务。

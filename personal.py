@@ -17,6 +17,9 @@ from sqlalchemy import Column, MetaData, String, Table, delete, insert, select, 
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.background import BackgroundTask
 
+from personal_errors import provider_error
+from personal_protocol import prepare_request
+
 log = logging.getLogger("office.personal")
 metadata = MetaData()
 models = Table(
@@ -157,13 +160,8 @@ class ProviderAdapter:
         client = httpx.AsyncClient(timeout=httpx.Timeout(180, connect=15), trust_env=False)
         streaming = False
         try:
-            url, authority, hostname = await public_target(client, row["endpoint"] + "/chat/completions")
-            allowed = {"messages", "stream", "stream_options", "temperature", "top_p", "max_tokens",
-                       "max_completion_tokens", "stop", "tools", "tool_choice", "parallel_tool_calls",
-                       "response_format", "seed", "presence_penalty", "frequency_penalty", "reasoning_effort",
-                       "modalities", "audio", "logprobs", "top_logprobs", "logit_bias"}
-            payload = {k: v for k, v in body.items() if k in allowed}
-            payload["model"] = row["model"]
+            route, payload = prepare_request(row["endpoint"], row["model"], body)
+            url, authority, hostname = await public_target(client, row["endpoint"] + route)
             key = cipher().decrypt(row["credential"].encode()).decode()
             req = client.build_request("POST", url, json=payload, headers={
                 "Host": authority, "Authorization": "Bearer " + key,
@@ -171,21 +169,31 @@ class ProviderAdapter:
             response = await client.send(req, stream=True)
             if not response.is_success:
                 log.warning("Private model returned status %d", response.status_code)
-                raise HTTPException(502, f"个人模型服务返回 HTTP {response.status_code}，请检查模型和密钥")
+                raise await provider_error(response)
             if body.get("stream"):
                 if "text/event-stream" not in response.headers.get("content-type", ""):
                     raise HTTPException(502, "模型服务未返回聊天事件流")
                 async def events():
                     try:
-                        async for chunk in response.aiter_bytes():
-                            yield chunk
+                        # WebUI 按行识别 SSE，网络分块可能合并或拆开多条事件。
+                        async for line in response.aiter_lines():
+                            yield (line + "\n").encode("utf-8")
                     finally:
                         await client.aclose()
+                event_lines = events()
+                if route == "/responses" and not body.get("metadata"):
+                    # 直接访问兼容 API 的客户端需要聊天分块。网页聊天由 WebUI 中间件处理。
+                    from open_webui.utils.response import convert_responses_stream_to_chat_completions
+                    event_lines = convert_responses_stream_to_chat_completions(event_lines)
                 streaming = True
-                return StreamingResponse(events(), media_type="text/event-stream",
+                return StreamingResponse(event_lines, media_type="text/event-stream",
                                          background=BackgroundTask(client.aclose))
             await response.aread()
-            return response.json()
+            result = response.json()
+            if route == "/responses":
+                from open_webui.routers.openai import convert_responses_result
+                return convert_responses_result(result)
+            return result
         except (httpx.HTTPError, ValueError) as exc:
             log.warning("Private model request failed (%s)", type(exc).__name__)
             raise HTTPException(502, "无法连接个人模型服务或响应格式有误") from exc

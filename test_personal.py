@@ -97,3 +97,26 @@ def test_old_bookmark_opens_native_connection_settings():
         response = client.get("/personal-models")
         assert response.status_code == 307
         assert response.headers["location"] == "/?settings=connections"
+
+
+def test_stream_emits_complete_lines_across_transport_chunks(repository, monkeypatch):
+    class SplitEvents(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for block in (b"data: one\r", b"\n\r\ndata: ", b"two\n\ndata: [DONE]\n\n"):
+                yield block
+
+    def upstream(request):
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=SplitEvents())
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(personal.httpx, "AsyncClient", lambda **kw: client_class(
+        transport=httpx.MockTransport(upstream), **kw))
+
+    async def run():
+        row = {"endpoint": "https://1.1.1.1/v1", "model": "example",
+               "credential": personal.cipher().encrypt(b"example").decode()}
+        result = await personal.ProviderAdapter().complete(row, {"messages": [], "stream": True})
+        assert [line async for line in result.body_iterator] == [
+            b"data: one\n", b"\n", b"data: two\n", b"\n", b"data: [DONE]\n", b"\n",
+        ]
+    asyncio.run(run())
